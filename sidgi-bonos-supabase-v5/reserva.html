@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="icon512.png">
+<meta name="theme-color" content="#0a0a0a">
+<title>Tu cita</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="publico-main">
+  <div class="publico-cabecera">
+    <div class="publico-logo" id="pub-logo">SIDGI <span>BONOS</span></div>
+  </div>
+  <div id="contenido"></div>
+</div>
+
+<script src="env.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="helpers.js"></script>
+<script src="public-client.js"></script>
+<script>
+const token = new URLSearchParams(location.search).get('id');
+let citaActual = null;
+
+async function pintar() {
+  const el = document.getElementById('contenido');
+  el.innerHTML = '<div class="vacio">Cargando tu cita...</div>';
+
+  if (!token) { pintarNoEncontrada(); return; }
+  try {
+    citaActual = await obtenerCitaPorToken(token);
+  } catch (e) {
+    el.innerHTML = '<div class="vacio">No hemos podido consultar tu cita. Inténtalo de nuevo en un momento.</div>';
+    return;
+  }
+  if (!citaActual) { pintarNoEncontrada(); return; }
+
+  document.getElementById('pub-logo').innerHTML = escapeHtml(citaActual.negocio.nombre).toUpperCase().replace(/^(\S+)\s*(.*)$/, (m, a, b) => b ? a + ' <span>' + b + '</span>' : a);
+  document.title = 'Tu cita — ' + citaActual.negocio.nombre;
+
+  const c = citaActual;
+  const d = new Date(c.fecha + 'T12:00:00');
+  const cancelada = c.estado === 'cancelada';
+  const pasada = c.fecha < hoyISO();
+
+  el.innerHTML = `
+    <div class="paso-titulo centrado mb-16">${cancelada ? 'Esta cita está cancelada' : 'Tu cita'}</div>
+    ${cancelada ? '' : `<div class="franja-aviso centrado mb-12" style="background:#eaf3ea;color:#2f6b3a;">Confirmada</div>`}
+    <div class="tarjeta" style="padding:12px 20px;">
+      <div class="resumen-linea"><span class="rl-label">Servicio</span><span class="rl-valor">${escapeHtml(c.servicio || 'Cita')}</span></div>
+      <div class="resumen-linea"><span class="rl-label">Día</span><span class="rl-valor" style="text-transform:capitalize;">${d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })}</span></div>
+      <div class="resumen-linea"><span class="rl-label">Hora</span><span class="rl-valor">${c.hora} (${c.duracion_min} min)</span></div>
+      <div class="resumen-linea"><span class="rl-label">Dónde</span><span class="rl-valor">${escapeHtml(c.negocio.nombre)}<br><span style="font-weight:400;font-size:13px;color:var(--gris-texto);">${escapeHtml(c.negocio.direccion || '')}</span></span></div>
+    </div>
+    ${cancelada || pasada
+      ? `<a class="btn btn-primario btn-full" href="reservar.html">Reservar otra cita</a>`
+      : `
+        <a class="btn btn-secundario btn-full mb-12" href="${icsDeCita(c, c.negocio.nombre)}" download="cita.ics">Añadir al calendario</a>
+        ${c.negocio.telefono ? `<a class="btn btn-secundario btn-full mb-12" href="https://wa.me/34${c.negocio.telefono.replace(/\D/g, '')}" target="_blank" rel="noopener">Contactar por WhatsApp</a>` : ''}
+        <button class="btn btn-peligro btn-full mb-12" onclick="pedirCancelar()">Cancelar mi cita</button>
+        <p class="texto-secundario centrado" style="font-size:14px;">¿Necesitas cambiarla? Cancélala y reserva otra hora.</p>`}
+  `;
+}
+
+function pintarNoEncontrada() {
+  document.getElementById('contenido').innerHTML = `
+    <div class="vacio">No encontramos ninguna cita con este enlace.<br>
+      <a class="btn btn-primario btn-medio mt-16" href="reservar.html" style="display:inline-flex;">Reservar una cita</a>
+    </div>`;
+}
+
+function pedirCancelar() {
+  const el = document.getElementById('contenido');
+  el.insertAdjacentHTML('beforeend', `
+    <div class="modal-fondo abierto" id="conf" onclick="if(event.target===this)this.remove()">
+      <div class="modal">
+        <div class="modal-asa"></div>
+        <div class="modal-titulo">Cancelar cita</div>
+        <p style="font-size:16px;color:var(--gris-texto);margin:8px 0 20px;">Tu hueco quedará libre para otra persona. Podrás reservar otra cita cuando quieras.</p>
+        <div class="fila-botones">
+          <button class="btn btn-secundario" onclick="document.getElementById('conf').remove()">Volver</button>
+          <button class="btn btn-peligro-lleno" onclick="cancelar()">Cancelar cita</button>
+        </div>
+      </div>
+    </div>`);
+}
+
+async function cancelar() {
+  document.getElementById('conf')?.remove();
+  try { await cancelarCitaPorToken(token); } catch (e) { /* si falla, pintar() mostrará el estado real */ }
+  await pintar();
+}
+
+pintar();
+</script>
+</body>
+</html>
